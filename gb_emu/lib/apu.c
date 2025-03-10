@@ -4,6 +4,8 @@
 #include <timer.h>
 #include <SDL2/SDL.h>
 
+#define APU_DEBUG 0
+
 static apu_context ctx = {0};
 
 static u8 dutyCycles[4][8] = {  {0, 0, 0, 0, 0, 0, 0, 1},
@@ -34,7 +36,19 @@ void apu_init() {
 void apu_tick() {
     if (!APU_POWERED_ON)
     {
+        ctx.NR52 &= ~(0b1111); // If powered off, power off all channels
+        ctx.NR10 = 0;
+        ctx.NR30 = 0;
 
+        for (int i = 0; i < 4; i++)
+        {
+            ctx.NRx1[i] = 0;
+            ctx.NRx2[i] = 0;
+            ctx.NRx3[i] = 0;
+            ctx.NRx4[i] = 0;
+        }
+        ctx.NR50 = 0;
+        ctx.NR51 = 0;
     }
     else
     {
@@ -211,8 +225,9 @@ void apu_clock_lengths()
 }
 
 void apu_write(u16 address, u8 value) {
-
+#if APU_DEBUG == 1
     printf("APU Writing %02X: %02X\n", address, value);
+#endif
     if (APU_POWERED_ON)
     {
         switch(address) {
@@ -303,72 +318,79 @@ void apu_write(u16 address, u8 value) {
 u8 apu_read(u16 address) {
     u8 retVal;
 
-    if (APU_POWERED_ON)
-    {
-        switch(address) {
-            case 0xFF10:
-                //NR10
-                retVal = ctx.NR10 |= 0x80;
-                break;
-
-            case 0xFF1A:
-                //NR30
-                retVal = ctx.NR30;
-                break;
-            
-            case 0xFF11:
-            case 0xFF16:
-            {
-                //NRx1
-                u16 offset = (address - 0xFF11) / 5;
-                retVal = ctx.NRx1[offset] |= 0x3F;
-            }
+    switch(address) {
+        case 0xFF10:
+            //NR10
+            retVal = ctx.NR10 |= 0x80;
             break;
 
-            case 0xFF12:
-            case 0xFF17:
-            case 0xFF1C:
-            case 0xFF21:
-            {
-                //NRx2
-                u16 offset = (address - 0xFF12) / 5;
-                retVal = ctx.NRx2[offset];
-            }
+        case 0xFF1A:
+            //NR30
+            retVal = ctx.NR30 |= 0x7F;
             break;
-
-            case 0xFF22:
-            {
-                //NRx3
-                u16 offset = (address - 0xFF13) / 5;
-                retVal = ctx.NRx3[offset];
-            }
-            break;
-
-            case 0xFF14:
-            case 0xFF19:
-            case 0xFF1E:
-            case 0xFF23:
-            {
-                //NRx4
-                u16 offset = (address - 0xFF14) / 5;
-                retVal = ctx.NRx4[offset];
-            }
-            break;
-    
-            case 0xFF24:
-                //NR50
-                retVal = ctx.NR50;
-                break;
-    
-            case 0xFF25:
-                //NR51
-                retVal = ctx.NR51;
-                break;
+        
+        case 0xFF11:
+        case 0xFF16:
+        {
+            //NRx1
+            u16 offset = (address - 0xFF11) / 5;
+            retVal = ctx.NRx1[offset] |= 0x3F;
         }
-    }
-    else
-    {
-        retVal = 0;
+        break;
+
+        case 0xFF12:
+        case 0xFF17:
+        case 0xFF21:
+        {
+            //NRx2
+            u16 offset = (address - 0xFF12) / 5;
+            retVal = ctx.NRx2[offset];
+        }
+        break;
+        
+        case 0xFF1C:
+        {
+            //NR32
+            u16 offset = (address - 0xFF12) / 5;
+            retVal = ctx.NRx2[offset] |= 0x9F;
+        }
+        break;
+
+        case 0xFF22:
+        {
+            //NRx3
+            u16 offset = (address - 0xFF13) / 5;
+            retVal = ctx.NRx3[offset];
+        }
+        break;
+
+        case 0xFF14:
+        case 0xFF19:
+        case 0xFF1E:
+        case 0xFF23:
+        {
+            //NRx4
+            u16 offset = (address - 0xFF14) / 5;
+            retVal = ctx.NRx4[offset] |= 0xBF;
+        }
+        break;
+
+        case 0xFF24:
+            //NR50
+            retVal = ctx.NR50;
+            break;
+
+        case 0xFF25:
+            //NR51
+            retVal = ctx.NR51;
+            break;
+
+        default:
+        {
+            //Write-only or unimplemented Registers
+            retVal = 0xFF;
+        }
+        break;
     }
 
     if ((address >= 0xFF30) &&
@@ -380,10 +402,10 @@ u8 apu_read(u16 address) {
     else if (address == 0xFF26)
     {
         //NR52
-        retVal = ctx.NR52;
+        retVal = ctx.NR52 |= 0x70;
     }
-
+#if APU_DEBUG == 1
     printf("APU Reading %02X: %02X\n", address, retVal);
-
+#endif
     return retVal;
 }
